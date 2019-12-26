@@ -76,7 +76,7 @@ stack_configuration_schema = Schema(
             Optional("credential"): {"profile": str},
         },
         Optional("gcp"): {
-            "general": {"project": str, "mode": str},
+            "general": {"project": str, "mode": str, Optional("account"): str},
             Optional("gke"): [{Or("zone", "region"): str, "name": str, Optional("refresh_kubeconfig"): Or("always", "never")}],
         },
         "terraform": {"vars": {str: str}, Optional("custom-providers"): {str: Or(str, {"version": str, "extension": str})}},
@@ -1248,23 +1248,23 @@ def main():
         # GCP/GKE support
         if "gcp" in stack_config:
             gcp_auth_mode = stack_config["gcp"]["general"].get("mode")
-            if gcp_auth_mode.lower() == "adc-user":
-                # In this mode we are trying to use ADC credentials of type authorized_user.
-                # The rational is to facilitate interactive usage from a local dev environment.
-                # We assume that the user is using the same identity for all projects.
-                # GKE access, if required, is configured using the same credentials with per-stack kuebconfig files.
-
+            if gcp_auth_mode.lower() in ("adc-user", "account"):
+                # The rationale is to facilitate interactive usage from a local dev environment.
+                # In adc-user mode we are using ADC credentials of type authorized_user, this assumes that the user is using the same identity for all projects.
+                # In account mode, we are using account credentials which allows to use multiple identities.
+                # GKE access, if required, is configured using the same credentials with per-stack kubeconfig files.
+                gcp_auth_account = stack_config["gcp"]["general"].get("account")
                 logger.info("Looking for GCP user Application Default Credentials.")
                 try:
-                    command = [
-                        "gcloud",
-                        "auth",
-                        "application-default",
-                        "print-access-token",
-                    ]
-                    subprocess.run(
-                        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
-                    )
+                    if gcp_auth_account:
+                        logger.debug("Using {} GCP account.".format(gcp_auth_account))
+                        command = ["gcloud", "auth", "print-access-token", "--account", gcp_auth_account]
+                    else:
+                        command = ["gcloud", "auth", "application-default", "print-access-token"]
+                    out = subprocess.DEVNULL if wrapper_config["debug"] else subprocess.STDOUT
+                    logger.debug('Execute command "{}"'.format(command))
+                    p = subprocess.run(command, stdout=subprocess.PIPE, stderr=out, check=True)
+                    os.environ["GOOGLE_OAUTH_ACCESS_TOKEN"] = p.stdout.decode("ascii").strip()
                 except FileNotFoundError:
                     logger.error("Please make sure that gcloud is available on this system.")
                     sys.exit(RC_KO)
