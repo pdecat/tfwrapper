@@ -1,3 +1,10 @@
+# 13.2.3 (2024/10/24)
+
+FIXED:
+
+- hotfix: GitHub release page no longer supports after parameter
+
+
 # 13.2.2 (2024/03/13)
 
 UPDATES:
